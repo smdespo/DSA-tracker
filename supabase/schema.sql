@@ -8,6 +8,7 @@ create table if not exists concepts (
 
 create table if not exists problems (
   id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete cascade,
   number text,
   title text not null,
   platform text not null default 'LeetCode',
@@ -19,11 +20,42 @@ create table if not exists problems (
   space_complexity text not null default '',
   created_at timestamptz not null default now()
 );
+alter table public.problems
+  add column if not exists user_id uuid references auth.users(id) on delete cascade;
 create index if not exists problems_concept_idx on problems(concept_id);
 
--- Only the server (service role key) touches the data.
 alter table concepts enable row level security;
 alter table problems enable row level security;
+
+drop policy if exists concepts_authenticated_select on public.concepts;
+create policy concepts_authenticated_select
+  on public.concepts for select to authenticated
+  using (true);
+
+drop policy if exists problems_owner_select on public.problems;
+create policy problems_owner_select
+  on public.problems for select to authenticated
+  using (user_id = (select auth.uid()));
+
+drop policy if exists problems_owner_insert on public.problems;
+create policy problems_owner_insert
+  on public.problems for insert to authenticated
+  with check (user_id = (select auth.uid()));
+
+drop policy if exists problems_owner_update on public.problems;
+create policy problems_owner_update
+  on public.problems for update to authenticated
+  using (user_id = (select auth.uid()))
+  with check (user_id = (select auth.uid()));
+
+drop policy if exists problems_owner_delete on public.problems;
+create policy problems_owner_delete
+  on public.problems for delete to authenticated
+  using (user_id = (select auth.uid()));
+
+grant select on public.concepts to authenticated;
+grant select, insert, update, delete on public.problems to authenticated;
+grant usage, select on sequence public.concepts_id_seq to authenticated;
 
 -- Seed concepts: first item = parent, rest = subtopics
 do $$
